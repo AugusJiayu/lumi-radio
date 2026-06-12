@@ -1,0 +1,65 @@
+{
+  "name": "lumi-radio",
+  "version": "1.0.0",
+  "description": "Lumi — 基于Mimo大模型的私人AI电台DJ",
+  "main": "main.js",
+  "scripts": {
+    "start": "cmd.exe /c start.bat",
+    "dev": "node server/server.js & electron .",
+    "server": "node server/server.js",
+    "build": "electron-builder --win"
+  },
+  "author": "Lumi",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.0",
+    "express": "^4.21.0",
+    "form-data": "^4.0.5",
+    "NeteaseCloudMusicApi": "^4.32.0",
+    "node-fetch": "^2.7.0",
+    "sql.js": "^1.11.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^18.3.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.lumi.radio",
+    "productName": "Lumi Radio",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Lumi Radio"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "server/**/*",
+      "renderer/**/*",
+      "user/**/*",
+      "data/**/*",
+      "!data/tts-cache/**/*",
+      "!data/lumi.db"
+    ],
+    "extraResources": [
+      {
+        "from": "user/",
+        "to": "user/"
+      }
+    ]
+  }
+}

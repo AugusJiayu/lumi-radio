@@ -1,0 +1,454 @@
+/* ========================================
+   Genre + Mode + 设置样式
+   ======================================== */
+
+/* ===== Genre 页面 ===== */
+#page-genre {
+  flex-direction: column;
+  padding: 16px;
+}
+
+.genre-section {
+  flex: 1;
+}
+
+.genre-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.genre-tag {
+  padding: 8px 18px;
+  border-radius: 20px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  background: var(--glass-tint);
+  backdrop-filter: blur(12px) brightness(var(--glass-brightness));
+  -webkit-backdrop-filter: blur(12px) brightness(var(--glass-brightness));
+  border: 1px solid var(--glass-tint-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  transition: color 0.2s, border-color 0.2s, background-color 0.8s ease;
+}
+
+.genre-tag:hover {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.genre-tag.active {
+  background: var(--green);
+  color: #000;
+  border-color: var(--green);
+  font-weight: 600;
+}
+
+/* ===== Profile 页面 ===== */
+#page-profile {
+  flex-direction: column;
+}
+
+.profile-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 用户卡片 */
+.profile-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 20px 24px;
+  background: var(--glass-tint);
+  backdrop-filter: blur(20px) saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
+  -webkit-backdrop-filter: blur(20px) saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
+  border: 1px solid var(--glass-tint-border);
+  border-radius: 20px;
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 var(--glass-highlight);
+  position: relative;
+  overflow: hidden;
+}
+
+.profile-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(ellipse at 30% 0%, var(--glass-highlight), transparent 60%);
+  pointer-events: none;
+}
+
+.profile-avatar-wrap {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.profile-avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--green), var(--green-dark, #0a7c56));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(0, 229, 160, 0.25);
+  overflow: hidden;
+  transition: filter 0.2s;
+}
+
+.profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-avatar-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.profile-avatar-overlay svg {
+  width: 24px;
+  height: 24px;
+  color: #fff;
+}
+
+.profile-avatar-wrap:hover .profile-avatar-overlay {
+  opacity: 1;
+}
+
+.profile-name {
+  font-family: var(--font-body);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+  padding: 4px 12px;
+  border-radius: 8px;
+  transition: background 0.2s;
+  position: relative;
+  z-index: 1;
+}
+
+.profile-name:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="light"] .profile-name:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.profile-name-input {
+  font-family: var(--font-body);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--green);
+  border-radius: 8px;
+  padding: 4px 12px;
+  outline: none;
+  text-align: center;
+  width: 200px;
+  position: relative;
+  z-index: 1;
+}
+
+.profile-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+  position: relative;
+  z-index: 1;
+}
+
+.conn-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  flex-shrink: 0;
+}
+
+.conn-dot-off {
+  background: var(--text-muted) !important;
+}
+
+/* 统计区 */
+.profile-stats {
+  display: flex;
+  gap: 12px;
+}
+
+.stat-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px 12px;
+  background: var(--glass-tint);
+  backdrop-filter: blur(16px) saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
+  -webkit-backdrop-filter: blur(16px) saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
+  border: 1px solid var(--glass-tint-border);
+  border-radius: 16px;
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.05),
+    inset 0 1px 0 var(--glass-highlight);
+}
+
+.stat-num {
+  font-family: var(--font-mono);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--green);
+}
+
+.stat-label {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 2px;
+}
+
+/* 设置列表 */
+.profile-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--glass-tint);
+  backdrop-filter: blur(16px) saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
+  -webkit-backdrop-filter: blur(16px) saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
+  border: 1px solid var(--glass-tint-border);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.05),
+    inset 0 1px 0 var(--glass-highlight);
+}
+
+.setting-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.setting-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+[data-theme="light"] .setting-item:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.setting-item:not(:last-child) {
+  border-bottom: 1px solid var(--glass-tint-border);
+}
+
+.setting-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.setting-value {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* ===== 音乐品味页面 ===== */
+#page-taste {
+  flex-direction: column;
+}
+
+.taste-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  flex-shrink: 0;
+}
+
+.taste-back {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--glass-tint-border);
+  background: var(--glass-tint);
+  color: var(--text-dim);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.taste-back:hover {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.taste-title {
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.taste-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* 分区 */
+.taste-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.taste-section-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+/* 标签网格 */
+.taste-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 单个标签 */
+.taste-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 20px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: var(--glass-tint);
+  backdrop-filter: blur(12px) brightness(var(--glass-brightness));
+  -webkit-backdrop-filter: blur(12px) brightness(var(--glass-brightness));
+  border: 1px solid var(--glass-tint-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  transition: border-color 0.2s, color 0.2s;
+  cursor: default;
+}
+
+.taste-tag:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* 删除按钮 */
+.taste-tag-remove {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.taste-tag-remove:hover {
+  background: rgba(255, 75, 87, 0.2);
+  color: var(--red, #ff4b57);
+}
+
+/* 添加按钮 */
+.taste-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 14px;
+  border-radius: 20px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--green);
+  background: transparent;
+  border: 1px dashed rgba(0, 229, 160, 0.3);
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.15s;
+}
+
+.taste-add-btn:hover {
+  border-color: var(--green);
+  background: rgba(0, 229, 160, 0.06);
+}
+
+/* 添加输入框 */
+.taste-add-input {
+  padding: 7px 14px;
+  border-radius: 20px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--green);
+  outline: none;
+  width: 120px;
+  transition: width 0.2s;
+}
+
+.taste-add-input:focus {
+  width: 180px;
+}
+
+[data-theme="light"] .taste-add-input {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .taste-tag:hover {
+  border-color: rgba(0, 0, 0, 0.12);
+}
