@@ -281,7 +281,7 @@ Router 支持两种模式：
 - 抽象 `BaseAdapter` 定义 `chat()` / `chatStream()` / `chatWithTools()` 接口
 - `MimoAdapter` 同时支持 Anthropic（`/v1/messages`）和 OpenAI（`/chat/completions`）格式，根据 base URL 自动检测
 - 工具调用遵循 Anthropic `tool_use` / `tool_result` 模式，Agent 循环最多 5 轮
-- JSON 输出使用低温度（0.4）保证稳定性，普通对话用 0.8
+- JSON 输出使用低温度（0.5）保证稳定性，普通对话用 0.8
 
 ## 🎛️ 定时广播
 
@@ -291,7 +291,7 @@ Router 支持两种模式：
 | 12:30 | 午间 | 午间放松 + 推荐歌曲 |
 | 15:00 | 下午 | 下午茶 + 推荐歌曲 |
 | 18:30 | 晚间 | 晚间陪伴 + 推荐歌曲 |
-| 23:00 | 深夜 | 舒缓入睡 + 5-6 首歌单 |
+| 23:00 | 深夜 | 舒缓入睡 + 3首推荐歌曲 |
 
 ## 🎵 自定义你的品味
 

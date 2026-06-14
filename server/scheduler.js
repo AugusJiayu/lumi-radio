@@ -18,7 +18,7 @@ class Scheduler {
     console.log('[Scheduler] 调度器已启动');
 
     // 早间播报 08:00
-    this.scheduleDaily(8, 0, 'morning', '早安~新的一天开始了，给我一个好心情的开始吧。推荐3首歌。');
+    this.scheduleDaily(8, 0, 'morning', '早安~新的一天开始了，给我一个好心情的开始吧。推荐2首歌。');
 
     // 午间推荐 12:30
     this.scheduleDaily(12, 30, 'noon', '午休时间，来点轻松的音乐吧。推荐2-3首歌。');
@@ -30,7 +30,7 @@ class Scheduler {
     this.scheduleDaily(18, 30, 'evening', '下班了，辛苦了，来点放松的音乐。推荐2-3首歌。');
 
     // 深夜电台 23:00
-    this.scheduleDaily(23, 0, 'night', '夜深了，今天辛苦了，来点舒缓的音乐陪伴入睡。推荐5-6首歌，排成一个小歌单。');
+    this.scheduleDaily(23, 0, 'night', '夜深了，今天辛苦了，来点舒缓的音乐陪伴入睡。推荐3首歌，排成一个小歌单。');
 
     // 每分钟检查一次
     this.interval = setInterval(() => this.tick(), 60000);

@@ -274,7 +274,7 @@ class Router {
 
       // 5. LLM 决策（流式输出，低温确保 JSON 格式稳定）
       console.log(`[Router] 开始调用 LLM...`);
-      let fullResponse = await this.llm.chatStream(messages, { temperature: 0.4 }, (chunk) => {
+      let fullResponse = await this.llm.chatStream(messages, { temperature: 0.5 }, (chunk) => {
         if (ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'dj_streaming', chunk }));
         }
@@ -333,6 +333,7 @@ class Router {
       // 7. 根据 action 分支处理
       let playList = [];
       let finalSay = djOutput.say || '';
+      let ttsHash = null;
 
       switch (action) {
         case 'play': {
@@ -358,7 +359,7 @@ class Router {
                   async (toolName, toolArgs) => {
                     if (toolName === 'web_search') {
                       searchCount++;
-                      if (searchCount > 2) {
+                      if (searchCount > 3) {
                         return '已获取足够信息，请直接撰写DJ台词，不要再搜索。';
                       }
                       const tool = this.tools.find(t => t.name === 'web_search');
@@ -374,6 +375,7 @@ class Router {
               ]);
             } catch (err) {
               console.error('[Router] Intro 撰写失败，使用阶段一结果:', err.message);
+              finalSay = djOutput.say || '';
             }
           }
 
@@ -384,6 +386,7 @@ class Router {
             try { ttsResult = await this.tts.synthesize(finalSay); }
             catch (ttsErr) { console.error('[Router] TTS 合成失败:', ttsErr.message); }
           }
+          ttsHash = ttsResult?.hash || null;
 
           this.broadcast({
             type: 'dj_response',
@@ -391,7 +394,8 @@ class Router {
             action: 'play',
             reason: djOutput.reason,
             songs: playList,
-            ttsAudio: ttsResult?.base64 || null
+            ttsAudio: ttsResult?.base64 || null,
+            ttsHash
           });
           this.broadcastState('idle');
 
@@ -413,11 +417,29 @@ class Router {
             this.sessionState.lastPlayedSong = playList[0].name;
             this.sessionState.lastPlayedArtist = playList[0].artist;
           }
+
+          // 多首歌时：后台异步生成逐首过渡（不阻塞消息队列）
+          // 用户听到 intro 的同时，过渡台词在后台并行生成
+          if (playList.length > 1) {
+            const remainingSongs = playList.slice(1);
+            const remainingMeta = songMetaList.slice(1);
+            this._generateTransitions(remainingSongs, remainingMeta)
+              .then(transitions => {
+                this.broadcast({
+                  type: 'dj_response',
+                  action: 'play_transitions',
+                  transitions
+                });
+              })
+              .catch(err => {
+                console.error('[Router] Play transitions 生成失败:', err.message);
+              });
+          }
           break;
         }
 
         case 'queue': {
-          // 追加队列：先确认加入，再异步生成衔接台词
+          // 追加队列：先确认加入，再逐首生成过渡台词
           if (djOutput.play?.length > 0) {
             this.broadcastState('choosing');
             const [resolved, songMetaList] = await Promise.all([
@@ -436,52 +458,19 @@ class Router {
               ttsAudio: null
             });
 
-            // 异步生成衔接台词 + TTS，完成后单独发送
-            this.broadcastState('writing');
-            try {
-              const introMessages = this.context.assembleIntroPrompt(
-                djOutput, songMetaList, this.sessionState
-              );
-              let searchCount = 0;
-              finalSay = await Promise.race([
-                this.llm.chatWithTools(
-                  introMessages, this.tools,
-                  async (toolName, toolArgs) => {
-                    if (toolName === 'web_search') {
-                      searchCount++;
-                      if (searchCount > 2) {
-                        return '已获取足够信息，请直接撰写DJ台词，不要再搜索。';
-                      }
-                      const tool = this.tools.find(t => t.name === 'web_search');
-                      return await tool.execute(toolArgs);
-                    }
-                    return '未知工具';
-                  },
-                  { maxTokens: 1024 }
-                ),
-                new Promise((_, reject) =>
-                  setTimeout(() => reject(new Error('queue 阶段二超时(60s)')), 60000)
-                )
-              ]);
-
-              if (finalSay) {
-                let queueTTS = null;
-                this.broadcastState('speaking');
-                try { queueTTS = await this.tts.synthesize(finalSay); }
-                catch (ttsErr) { console.error('[Router] TTS 合成失败:', ttsErr.message); }
-
+            // 后台异步生成逐首过渡（不阻塞消息队列）
+            this._generateTransitions(playList, songMetaList)
+              .then(transitions => {
                 this.broadcast({
                   type: 'dj_response',
-                  say: finalSay,
-                  action: 'queue_intro',
+                  action: 'queue_transitions',
                   songs: playList,
-                  ttsAudio: queueTTS?.base64 || null
+                  transitions
                 });
-                this.broadcastState('idle');
-              }
-            } catch (err) {
-              console.error('[Router] Queue intro 撰写失败:', err.message);
-            }
+              })
+              .catch(err => {
+                console.error('[Router] Queue transitions 生成失败:', err.message);
+              });
           } else {
             // 没有歌曲，降级为 chat
             this.broadcast({
@@ -516,7 +505,7 @@ class Router {
                   async (toolName, toolArgs) => {
                     if (toolName === 'web_search') {
                       searchCount++;
-                      if (searchCount > 2) {
+                      if (searchCount > 3) {
                         return '已获取足够信息，请直接撰写DJ台词，不要再搜索。';
                       }
                       const tool = this.tools.find(t => t.name === 'web_search');
@@ -532,6 +521,7 @@ class Router {
               ]);
             } catch (err) {
               console.error('[Router] Intro 撰写失败:', err.message);
+              finalSay = djOutput.say || '';
             }
           }
 
@@ -541,13 +531,15 @@ class Router {
             try { introTTS = await this.tts.synthesize(finalSay); }
             catch (ttsErr) { console.error('[Router] TTS 合成失败:', ttsErr.message); }
           }
+          ttsHash = introTTS?.hash || null;
 
           this.broadcast({
             type: 'dj_response',
             say: finalSay,
             action: 'intro',
             songs: playList,
-            ttsAudio: introTTS?.base64 || null
+            ttsAudio: introTTS?.base64 || null,
+            ttsHash
           });
           this.broadcastState('idle');
 
@@ -587,7 +579,7 @@ class Router {
 
       // 8. 保存聊天记录 + 播放记录
       this.db.saveChat('user', userInput);
-      this.db.saveChat('dj', finalSay, djOutput);
+      this.db.saveChat('dj', finalSay, djOutput, ttsHash);
       for (const song of playList) {
         this.db.savePlayRecord(song.name, song.artist, String(song.id));
       }
@@ -632,6 +624,73 @@ class Router {
       }
     }
     return results;
+  }
+
+  /**
+   * 为歌曲列表生成逐首过渡台词
+   * @param {Array} songs - 解析后的歌曲列表 [{name, artist, ...}]
+   * @param {Array} songMetaList - 真实元数据列表
+   * @returns {Array} [{sayText, ttsAudio, ttsHash, mode}, ...]
+   */
+  async _generateTransitions(songs, songMetaList) {
+    const transitions = [];
+
+    for (let i = 0; i < songs.length; i++) {
+      // 确定上一首歌：第一首用当前正在播放的，后续用队列中的前一首
+      const fromSong = i === 0
+        ? (this.currentSong ? { name: this.currentSong.name, artist: this.currentSong.artist } : null)
+        : songs[i - 1];
+
+      // 过渡模式：有上一首歌时 60% segue / 40% direct，没有上一首时强制 direct
+      const mode = fromSong && Math.random() < 0.6 ? 'segue' : 'direct';
+
+      let sayText = null;
+      let ttsAudio = null;
+      let ttsHash = null;
+
+      try {
+        const transitionMessages = this.context.assembleTransitionPrompt(
+          fromSong, mode, songMetaList[i] || songs[i]
+        );
+
+        let searchCount = 0;
+        sayText = await Promise.race([
+          this.llm.chatWithTools(
+            transitionMessages, this.tools,
+            async (toolName, toolArgs) => {
+              if (toolName === 'web_search') {
+                searchCount++;
+                if (searchCount > 3) return '已获取足够信息，请直接撰写台词。';
+                const tool = this.tools.find(t => t.name === 'web_search');
+                return await tool.execute(toolArgs);
+              }
+              return '未知工具';
+            },
+            { maxTokens: 512 }
+          ),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`transition[${i}] 超时(30s)`)), 30000)
+          )
+        ]);
+      } catch (err) {
+        console.error(`[Router] Transition[${i}] 生成失败:`, err.message);
+      }
+
+      if (sayText) {
+        try {
+          const ttsResult = await this.tts.synthesize(sayText);
+          ttsAudio = ttsResult?.base64 || null;
+          ttsHash = ttsResult?.hash || null;
+        } catch (ttsErr) {
+          console.error(`[Router] Transition[${i}] TTS 失败:`, ttsErr.message);
+        }
+      }
+
+      transitions.push({ sayText, ttsAudio, ttsHash, mode });
+      console.log(`[Router] Transition[${i}] ${mode} 生成完成`);
+    }
+
+    return transitions;
   }
 
   /**

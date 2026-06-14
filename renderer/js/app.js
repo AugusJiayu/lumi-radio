@@ -23,7 +23,6 @@ class LumiApp {
     this.setupNavigation();
     this.setupDotMatrix();
     this.setupClock();
-    this.setupGenre();
     this.setupProfile();
     this.setupTopbar();
     this.setupElectronCommands();
@@ -31,6 +30,9 @@ class LumiApp {
 
     // 初始化：只显示 home 页面
     this.switchPage('home');
+
+    // 提前加载头像（确保聊天消息可用）
+    this._loadProfileData();
 
     // Border glow — always visible, pulses with music
     this._createBorderGlow();
@@ -149,6 +151,8 @@ class LumiApp {
 
     // 沉浸式播放页：隐藏 topbar/visualizer/胶囊导航
     document.body.classList.toggle('np-immersive', page === 'nowplaying');
+    // 聊天页/个人页：隐藏极光条
+    document.body.classList.toggle('chat-view', page === 'chat' || page === 'profile');
     // 品味页：仅隐藏胶囊导航
     document.body.classList.toggle('nav-hidden', page === 'taste');
 
@@ -293,24 +297,6 @@ class LumiApp {
       `${now.getDate()} · ${months[now.getMonth()]} · ${now.getFullYear()}`;
   }
 
-  // ===== Genre 选择 =====
-
-  setupGenre() {
-    document.querySelectorAll('.genre-tag').forEach(tag => {
-      tag.addEventListener('click', () => tag.classList.toggle('active'));
-    });
-
-    document.getElementById('genre-next')?.addEventListener('click', () => {
-      const selected = [...document.querySelectorAll('.genre-tag.active')].map(t => t.dataset.genre);
-      this.sendMessage(`我喜欢这些音乐风格: ${selected.join(', ')}`);
-      this.switchPage('home');
-    });
-
-    document.getElementById('genre-skip')?.addEventListener('click', () => {
-      this.switchPage('home');
-    });
-  }
-
   // ===== Profile 个人页 =====
 
   setupProfile() {
@@ -322,31 +308,15 @@ class LumiApp {
       const fileInput = document.getElementById('avatar-file-input');
       if (avatarWrap && fileInput) {
         avatarWrap.addEventListener('click', () => fileInput.click());
-        fileInput.addEventListener('change', async (e) => {
+        fileInput.addEventListener('change', (e) => {
           const file = e.target.files?.[0];
           if (!file) return;
           const reader = new FileReader();
-          reader.onload = async (ev) => {
-            const dataUrl = ev.target.result;
-            this._setAvatarImage(dataUrl);
-            try {
-              const res = await fetch(`${APP_API_BASE}/api/avatar`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image: dataUrl })
-              });
-              const result = await res.json();
-              if (result.url) {
-                this._avatarUrl = APP_API_BASE + result.url;
-                this._setAvatarImage(this._avatarUrl);
-              }
-            } catch (err) {
-              console.error('[App] 头像上传失败:', err);
-            }
-          };
+          reader.onload = (ev) => this._showAvatarCrop(ev.target.result);
           reader.readAsDataURL(file);
           fileInput.value = '';
         });
+        this._initCropModal();
       }
 
       // 主题切换
@@ -423,6 +393,176 @@ class LumiApp {
     el.innerHTML = `<img src="${src}" alt="avatar">`;
   }
 
+  /**
+   * 初始化头像裁剪弹窗（只绑定一次）
+   */
+  _initCropModal() {
+    const overlay = document.getElementById('avatar-crop-overlay');
+    const viewport = document.getElementById('avatar-crop-viewport');
+    const img = document.getElementById('avatar-crop-img');
+    const closeBtn = document.getElementById('avatar-crop-close');
+    const cancelBtn = document.getElementById('avatar-crop-cancel');
+    const confirmBtn = document.getElementById('avatar-crop-confirm');
+
+    if (!overlay || !viewport || !img) return;
+
+    // 关闭弹窗
+    const hide = () => { overlay.style.display = 'none'; };
+    closeBtn?.addEventListener('click', hide);
+    cancelBtn?.addEventListener('click', hide);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) hide(); });
+
+    // 拖拽移动图片
+    let dragging = false;
+    let startX, startY, imgStartLeft, imgStartTop;
+
+    const clampPosition = () => {
+      // 限制图片拖拽范围：确保圆形区域始终被图片覆盖
+      const vw = viewport.offsetWidth;
+      const vh = viewport.offsetHeight;
+      const iw = img.offsetWidth;
+      const ih = img.offsetHeight;
+      const circleR = 100; // 圆形半径
+      const cx = vw / 2;
+      const cy = vh / 2;
+
+      // 圆形左边缘 = cx - circleR，右边缘 = cx + circleR
+      // 图片 left 必须满足：left <= 圆左边缘  且  left + iw >= 圆右边缘
+      const maxLeft = cx - circleR;                // 图片左边缘不超过圆左边缘
+      const minLeft = cx + circleR - iw;            // 图片右边缘不低于圆右边缘
+      const maxTop = cy - circleR;
+      const minTop = cy + circleR - ih;
+
+      let left = parseFloat(img.style.left) || 0;
+      let top = parseFloat(img.style.top) || 0;
+      left = Math.min(maxLeft, Math.max(minLeft, left));
+      top = Math.min(maxTop, Math.max(minTop, top));
+      img.style.left = left + 'px';
+      img.style.top = top + 'px';
+    };
+
+    viewport.addEventListener('pointerdown', (e) => {
+      if (e.target === img || e.target === viewport || viewport.contains(e.target)) {
+        dragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        imgStartLeft = parseFloat(img.style.left) || 0;
+        imgStartTop = parseFloat(img.style.top) || 0;
+        viewport.setPointerCapture(e.pointerId);
+        e.preventDefault();
+      }
+    });
+
+    viewport.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      img.style.left = (imgStartLeft + dx) + 'px';
+      img.style.top = (imgStartTop + dy) + 'px';
+      clampPosition();
+    });
+
+    viewport.addEventListener('pointerup', () => { dragging = false; });
+
+    // 确认裁剪
+    confirmBtn?.addEventListener('click', () => this._cropAndUpload(img, viewport));
+  }
+
+  /**
+   * 打开裁剪弹窗，加载图片
+   */
+  _showAvatarCrop(dataUrl) {
+    const overlay = document.getElementById('avatar-crop-overlay');
+    const viewport = document.getElementById('avatar-crop-viewport');
+    const img = document.getElementById('avatar-crop-img');
+    if (!overlay || !viewport || !img) return;
+
+    img.src = dataUrl;
+    overlay.style.display = 'flex';
+
+    // 图片加载后居中并适配
+    img.onload = () => {
+      const vw = viewport.offsetWidth;
+      const vh = viewport.offsetHeight;
+      const circleR = 100;
+      const targetSize = circleR * 2; // 图片至少覆盖圆形区域
+
+      // 缩放图片：让短边至少等于圆形直径
+      const imgW = img.naturalWidth;
+      const imgH = img.naturalHeight;
+      const scale = Math.max(targetSize / imgW, targetSize / imgH);
+      const displayW = imgW * scale;
+      const displayH = imgH * scale;
+      img.style.width = displayW + 'px';
+      img.style.height = displayH + 'px';
+
+      // 居中
+      img.style.left = ((vw - displayW) / 2) + 'px';
+      img.style.top = ((vh - displayH) / 2) + 'px';
+    };
+  }
+
+  /**
+   * 裁剪圆形区域并上传
+   */
+  async _cropAndUpload(img, viewport) {
+    const vw = viewport.offsetWidth;
+    const vh = viewport.offsetHeight;
+    const circleR = 100;
+    const outSize = 200; // 输出尺寸
+
+    // 计算圆形中心在视口中的位置
+    const cx = vw / 2;
+    const cy = vh / 2;
+
+    // 图片在视口中的偏移
+    const imgLeft = parseFloat(img.style.left) || 0;
+    const imgTop = parseFloat(img.style.top) || 0;
+
+    // 缩放比例：自然尺寸 → 显示尺寸
+    const scale = img.naturalWidth / img.offsetWidth;
+
+    // 圆形区域在图片自然坐标中的位置
+    const srcX = (cx - circleR - imgLeft) * scale;
+    const srcY = (cy - circleR - imgTop) * scale;
+    const srcSize = circleR * 2 * scale;
+
+    // Canvas 裁剪
+    const canvas = document.createElement('canvas');
+    canvas.width = outSize;
+    canvas.height = outSize;
+    const ctx = canvas.getContext('2d');
+
+    // 圆形裁剪
+    ctx.beginPath();
+    ctx.arc(outSize / 2, outSize / 2, outSize / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+
+    ctx.drawImage(img, srcX, srcY, srcSize, srcSize, 0, 0, outSize, outSize);
+
+    const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+
+    // 本地预览 + 上传
+    this._setAvatarImage(croppedDataUrl);
+    document.getElementById('avatar-crop-overlay').style.display = 'none';
+
+    try {
+      const res = await fetch(`${APP_API_BASE}/api/avatar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: croppedDataUrl })
+      });
+      const result = await res.json();
+      if (result.url) {
+        this._avatarUrl = APP_API_BASE + result.url;
+        this._setAvatarImage(this._avatarUrl);
+      }
+    } catch (err) {
+      console.error('[App] 头像上传失败:', err);
+    }
+  }
+
   getUserAvatarHTML() {
     if (this._avatarUrl) {
       return `<div class="chat-user-avatar"><img src="${this._avatarUrl}" alt=""></div>`;
@@ -465,7 +605,7 @@ class LumiApp {
       const res = await fetch(`${APP_API_BASE}/api/liked-songs`);
       const data = await res.json();
       const el = document.getElementById('stat-liked');
-      if (el) el.textContent = Array.isArray(data) ? data.length : 0;
+      if (el) el.textContent = data.songs?.length || 0;
     } catch (_) {}
 
     // 聊天数

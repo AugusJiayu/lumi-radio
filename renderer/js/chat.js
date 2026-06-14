@@ -15,7 +15,7 @@ class Chat {
   setupAppEvents() {
     app.on('dj_response', (data) => {
       this.removeStreaming();
-      if (data.say) this.addEntry('dj', data.say);
+      if (data.say) this.addEntry('dj', data.say, data.ttsHash || null);
     });
 
     app.on('dj_thinking', () => this.addStreaming());
@@ -26,7 +26,7 @@ class Chat {
     });
   }
 
-  addEntry(role, content) {
+  addEntry(role, content, ttsHash = null) {
     // 移除欢迎页
     this.messages.querySelector('.chat-welcome')?.remove();
 
@@ -35,18 +35,36 @@ class Chat {
 
     const el = document.createElement('div');
     el.className = `chat-entry ${role === 'user' ? 'user-entry' : ''} fade-in`;
+
     const avatarHTML = role === 'dj'
       ? '<div class="lumi-avatar lumi-sm"><div class="lumi-sphere"><div class="lumi-eyes"><div class="lumi-eye"></div><div class="lumi-eye"></div></div></div></div>'
       : (typeof app !== 'undefined' && app.getUserAvatarHTML ? app.getUserAvatarHTML() : '<div class="chat-user-avatar">♪</div>');
-    el.innerHTML = `
-      <div class="chat-avatar-col">${avatarHTML}</div>
-      <div class="chat-entry-body">
-        <div class="chat-entry-text">${this.escape(content)}</div>
-        <div class="chat-entry-actions">
-          <button class="chat-replay-btn" onclick="player.setDJMessage && player.setDJMessage('${this.escape(content).replace(/'/g, "\\'")}')">▶ REPLAY</button>
+
+    // DJ 消息：头像在左 + REPLAY 按钮；用户消息：头像在右，无 REPLAY
+    if (role === 'dj') {
+      el.innerHTML = `
+        <div class="chat-avatar-col">${avatarHTML}</div>
+        <div class="chat-entry-body">
+          <div class="chat-entry-text">${this.escape(content)}</div>
+          ${ttsHash ? `<div class="chat-entry-actions">
+            <button class="chat-replay-btn" data-tts-hash="${ttsHash}">▶ REPLAY</button>
+          </div>` : ''}
         </div>
-      </div>
-    `;
+      `;
+      // REPLAY 按钮事件
+      const replayBtn = el.querySelector('.chat-replay-btn');
+      if (replayBtn) {
+        replayBtn.addEventListener('click', () => this.replayTTS(ttsHash));
+      }
+    } else {
+      // 用户消息：avatar 先写，body 后写，CSS row-reverse 让 avatar 显示在右边
+      el.innerHTML = `
+        <div class="chat-avatar-col">${avatarHTML}</div>
+        <div class="chat-entry-body">
+          <div class="chat-entry-text">${this.escape(content)}</div>
+        </div>
+      `;
+    }
 
     this.messages.appendChild(el);
     this.scroll();
@@ -92,6 +110,69 @@ class Chat {
     return d.innerHTML;
   }
 
+  /**
+   * 播放 TTS 缓存音频
+   * @param {string} hash - TTS 文件的 MD5 hash
+   */
+  async replayTTS(hash) {
+    if (!hash) {
+      this.showToast('语音已不存在');
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/tts/${hash}.wav`);
+      if (!res.ok) {
+        this.showToast('语音已不存在');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      // 复用 player 的 TTS audio 元素
+      if (window.player && window.player.ttsAudio) {
+        const wasMuted = window.player.isMuted;
+        const origVol = window.player.volume;
+        window.player.ttsAudio.src = url;
+        window.player.ttsAudio.onended = () => {
+          URL.revokeObjectURL(url);
+          window.player.ttsAudio.onended = null;
+        };
+        window.player.ttsAudio.play().catch(() => {
+          URL.revokeObjectURL(url);
+          this.showToast('语音播放失败');
+        });
+      } else {
+        // fallback：创建临时 audio
+        const audio = new Audio(url);
+        audio.onended = () => URL.revokeObjectURL(url);
+        audio.play().catch(() => {
+          URL.revokeObjectURL(url);
+          this.showToast('语音播放失败');
+        });
+      }
+    } catch (err) {
+      this.showToast('语音已不存在');
+    }
+  }
+
+  /**
+   * 显示顶部 toast 提示
+   * @param {string} msg - 提示文字
+   */
+  showToast(msg) {
+    const existing = document.querySelector('.lumi-toast');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.className = 'lumi-toast';
+    toast.textContent = msg;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.classList.add('show'), 10);
+    setTimeout(() => {
+      toast.classList.remove('show');
+      setTimeout(() => toast.remove(), 300);
+    }, 2000);
+  }
+
   async loadHistory() {
     try {
       const res = await fetch(`${API_BASE}/api/history?limit=30`);
@@ -108,8 +189,18 @@ class Chat {
       }
 
       this.messages.innerHTML = '';
+      // 反转顺序：DESC 取出的是最新在前，反转后按时间正序渲染（用户消息在上，DJ回复在下）
+      history.reverse();
       for (const msg of history) {
-        this.addEntry(msg.role, msg.content);
+        // 从 metadata 中提取 tts_hash（如果有）
+        let ttsHash = msg.tts_hash || null;
+        if (!ttsHash && msg.metadata) {
+          try {
+            const meta = JSON.parse(msg.metadata);
+            ttsHash = meta.tts_hash || null;
+          } catch (_) {}
+        }
+        this.addEntry(msg.role, msg.content, ttsHash);
       }
     } catch {
       // 静默失败

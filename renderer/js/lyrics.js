@@ -192,9 +192,9 @@ class LyricsManager {
     // 致谢信息显隐：前奏（第一行之前）和尾奏（最后一行之后）显示
     this._updateCreditsVisibility(currentTime);
 
-    // 滚动到当前行
+    // 滚动到当前行（限制在 .np-lyrics 容器内，不影响页面其他区域）
     if (idx >= 0 && lineEls[idx]) {
-      lineEls[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+      this._scrollToCenter(lineEls[idx]);
     }
   }
 
@@ -223,10 +223,24 @@ class LyricsManager {
           ? this.container.querySelector('.np-credits-header')
           : this.container.querySelector('.np-credits-footer');
         if (target) {
-          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          this._scrollToCenter(target);
         }
       }
     }
+  }
+
+  /**
+   * 将目标元素滚动到容器中央（仅操作 .np-lyrics 容器，不影响页面）
+   */
+  _scrollToCenter(target) {
+    if (!this.container || !target) return;
+    const containerRect = this.container.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const offset = targetRect.top - containerRect.top - containerRect.height / 2 + targetRect.height / 2;
+    this.container.scrollTo({
+      top: this.container.scrollTop + offset,
+      behavior: 'smooth'
+    });
   }
 
   /**

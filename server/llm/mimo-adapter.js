@@ -142,7 +142,7 @@ class MimoAdapter extends BaseAdapter {
       return await this.chat(messages, options);
     }
 
-    const maxIterations = 5; // 防止无限循环
+    const maxIterations = 5; // 防止无限循环，prompt 引导最多3轮搜索
     let currentMessages = [...messages];
 
     for (let i = 0; i < maxIterations; i++) {
@@ -206,8 +206,31 @@ class MimoAdapter extends BaseAdapter {
       currentMessages.push({ role: 'user', content: toolResults });
     }
 
-    // 达到最大迭代次数
-    return '（搜索次数过多，跳过）';
+    // 达到最大迭代次数：不再给 tools，强制 LLM 基于已有搜索结果整理输出
+    console.warn(`[LLM] chatWithTools 达到最大迭代 ${maxIterations}，强制整理输出`);
+    const finalBody = this.buildBody(currentMessages, { ...options, tools: [] }, false);
+    const finalHeaders = this.getHeaders();
+    const finalEndpoint = this.getEndpoint();
+    try {
+      const finalResp = await fetch(finalEndpoint, {
+        method: 'POST',
+        headers: finalHeaders,
+        body: JSON.stringify(finalBody),
+        timeout: 60000
+      });
+      if (finalResp.ok) {
+        const finalData = await finalResp.json();
+        const finalText = (finalData.content || [])
+          .filter(b => b.type === 'text')
+          .map(b => b.text)
+          .join('');
+        if (finalText) return finalText;
+      }
+    } catch (e) {
+      console.error(`[LLM] 强制整理输出失败:`, e.message);
+    }
+    // 最后兜底（极小概率走到这里）
+    return 'emmm 让我想想... 你刚才说的我还需要消化一下，不如先聊聊别的？';
   }
 
   /**

@@ -1,50 +1,6 @@
 /* ========================================
-   Genre + Mode + 设置样式
+   Mode + 设置样式
    ======================================== */
-
-/* ===== Genre 页面 ===== */
-#page-genre {
-  flex-direction: column;
-  padding: 16px;
-}
-
-.genre-section {
-  flex: 1;
-}
-
-.genre-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.genre-tag {
-  padding: 8px 18px;
-  border-radius: 20px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 1px;
-  color: var(--text-dim);
-  background: var(--glass-tint);
-  backdrop-filter: blur(12px) brightness(var(--glass-brightness));
-  -webkit-backdrop-filter: blur(12px) brightness(var(--glass-brightness));
-  border: 1px solid var(--glass-tint-border);
-  box-shadow: inset 0 1px 0 var(--glass-highlight);
-  transition: color 0.2s, border-color 0.2s, background-color 0.8s ease;
-}
-
-.genre-tag:hover {
-  border-color: var(--green);
-  color: var(--green);
-}
-
-.genre-tag.active {
-  background: var(--green);
-  color: #000;
-  border-color: var(--green);
-  font-weight: 600;
-}
 
 /* ===== Profile 页面 ===== */
 #page-profile {
@@ -451,4 +407,84 @@
 
 [data-theme="light"] .taste-tag:hover {
   border-color: rgba(0, 0, 0, 0.12);
+}
+
+/* ===== Avatar Crop Modal ===== */
+
+.avatar-crop-modal {
+  width: 360px;
+}
+
+.avatar-crop-viewport {
+  position: relative;
+  width: 280px;
+  height: 280px;
+  margin: 0 auto 16px;
+  overflow: hidden;
+  background: #111;
+  border-radius: 12px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.avatar-crop-viewport:active {
+  cursor: grabbing;
+}
+
+/* Circular crop frame — fixed in center */
+.avatar-crop-circle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 200px;
+  height: 200px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* Draggable image */
+.avatar-crop-img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.avatar-crop-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.avatar-crop-actions .btn {
+  min-width: 80px;
+  padding: 8px 20px;
+  border-radius: 10px;
+  font-size: 14px;
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.2s;
+}
+
+.avatar-crop-actions .btn:hover {
+  opacity: 0.85;
+}
+
+.avatar-crop-actions .btn-secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+.avatar-crop-actions .btn-primary {
+  background: var(--env-primary, #00e5a0);
+  color: #000;
+  font-weight: 600;
 }

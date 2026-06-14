@@ -645,7 +645,7 @@
   letter-spacing: 1px;
 }
 
-/* ===== DJ 面板 ===== */
+/* ===== DJ 面板（输入框融合为整体） ===== */
 .dj-panel {
   position: relative;
   background: var(--glass-tint);
@@ -655,7 +655,8 @@
   border-radius: 16px;
   padding: 14px;
   margin: 8px 0;
-  max-height: 200px;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   box-shadow:
@@ -664,6 +665,36 @@
     inset 0 -1px 0 rgba(0, 0, 0, 0.08);
   overflow: hidden;
   transition: background 0.8s ease, border-color 0.8s ease;
+}
+
+/* 面板内输入框：胶囊形状，视觉层级低于面板 */
+.dj-panel > .input-row {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: none;
+  padding: 4px 5px 4px 14px;
+  margin: 8px 0 0;
+}
+
+.dj-panel > .input-row:focus-within {
+  border-color: var(--border);
+  box-shadow: none;
+}
+
+.dj-panel > .input-row textarea {
+  field-sizing: fixed;
+  outline: none;
+}
+
+[data-theme="light"] .dj-panel > .input-row {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .dj-panel > .input-row:focus-within {
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: none;
 }
 
 .dj-panel::before {
@@ -693,6 +724,7 @@
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  padding: 4px 16px;
 }
 
 .dj-messages::-webkit-scrollbar {
@@ -704,12 +736,14 @@
   border-radius: 2px;
 }
 
-/* 单条消息 */
+/* 单条消息（宽度自适应内容） */
 .dj-msg {
   display: flex;
   gap: 10px;
   align-items: flex-start;
   padding: 6px 0;
+  width: fit-content;
+  max-width: 80%;
 }
 
 .dj-msg-avatar {
@@ -735,6 +769,8 @@
   user-select: text;
   -webkit-user-select: text;
   cursor: text;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .dj-msg-meta {
@@ -744,9 +780,15 @@
   margin-top: 4px;
 }
 
-/* 用户消息靠右 */
+/* 用户消息靠右，宽度自适应内容 */
 .dj-msg.user {
   flex-direction: row-reverse;
+  align-self: flex-end;
+  max-width: 80%;
+}
+
+.dj-msg.user .dj-msg-body {
+  width: fit-content;
 }
 
 .dj-msg.user .dj-msg-avatar {

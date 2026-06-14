@@ -15,8 +15,9 @@
 class AudioBreathEffect {
   /**
    * @param {Object} options
-   * @param {HTMLAudioElement} options.audioEl    — the audio element to analyze
-   * @param {HTMLElement}      options.targetEl   — now-bar element for micro-breathing
+   * @param {HTMLAudioElement} options.audioEl         — primary audio (music)
+   * @param {HTMLAudioElement} options.secondaryAudioEl — secondary audio (TTS), optional
+   * @param {HTMLElement}      options.targetEl        — now-bar element for micro-breathing
    * @param {number} options.attackMs   — response time for energy increase (default 150)
    * @param {number} options.releaseMs  — decay time for energy decrease (default 500)
    * @param {number} options.smoothAttack  — EMA alpha for rising energy (default 0.3)
@@ -24,6 +25,7 @@ class AudioBreathEffect {
    */
   constructor(options = {}) {
     this.audioEl = options.audioEl;
+    this.secondaryAudioEl = options.secondaryAudioEl || null;
     this.targetEl = options.targetEl;
     this.attackMs = options.attackMs || 150;
     this.releaseMs = options.releaseMs || 500;
@@ -31,7 +33,10 @@ class AudioBreathEffect {
     this.smoothRelease = options.smoothRelease || 0.06;
 
     this._ctx = null;
-    this._source = null;
+    this._source = null;         // primary MediaElementSource (music)
+    this._source2 = null;        // secondary MediaElementSource (TTS)
+    this._gainPrimary = null;    // GainNode for music
+    this._gainSecondary = null;  // GainNode for TTS
     this._analyser = null;
     this._data = null;
     this._spring = null;
@@ -71,17 +76,30 @@ class AudioBreathEffect {
   }
 
   /**
-   * Connect to the audio element. Call after init().
+   * Connect to audio elements. Call after init().
+   * Creates two source→gain chains feeding the same analyser.
    */
   connect() {
     if (!this._ctx || this._source) return;
 
     try {
+      // Primary (music): source → gain → analyser → destination
+      this._gainPrimary = this._ctx.createGain();
       this._source = this._ctx.createMediaElementSource(this.audioEl);
-      this._source.connect(this._analyser);
+      this._source.connect(this._gainPrimary);
+      this._gainPrimary.connect(this._analyser);
+
+      // Secondary (TTS): source → gain → analyser (initially muted)
+      if (this.secondaryAudioEl) {
+        this._gainSecondary = this._ctx.createGain();
+        this._gainSecondary.gain.value = 0; // muted by default
+        this._source2 = this._ctx.createMediaElementSource(this.secondaryAudioEl);
+        this._source2.connect(this._gainSecondary);
+        this._gainSecondary.connect(this._analyser);
+      }
+
       this._analyser.connect(this._ctx.destination);
     } catch (e) {
-      // Already connected — reuse
       console.warn('[AudioBreath] Source already connected');
     }
   }
@@ -120,6 +138,26 @@ class AudioBreathEffect {
   }
 
   /**
+   * Switch breath analysis to the secondary audio source (TTS).
+   * Mutes primary, unmutes secondary.
+   */
+  switchToSecondary() {
+    if (!this._gainSecondary) return;
+    this._gainPrimary.gain.value = 0;
+    this._gainSecondary.gain.value = 1;
+  }
+
+  /**
+   * Restore breath analysis to the primary audio source (music).
+   * Mutes secondary, unmutes primary.
+   */
+  restorePrimary() {
+    if (!this._gainPrimary) return;
+    this._gainSecondary.gain.value = 0;
+    this._gainPrimary.gain.value = 1;
+  }
+
+  /**
    * Full cleanup.
    */
   destroy() {
@@ -149,8 +187,8 @@ class AudioBreathEffect {
     }
     const rms = Math.sqrt(sum / this._data.length);
 
-    // Normalize: quiet room ≈ 0.01~0.03, loud music ≈ 0.3~0.6
-    return Math.min(1, rms * 2.5);
+    // Normalize: quiet room ≈ 0.01~0.03, loud music ≈ 0.4~0.8
+    return Math.min(1, rms * 4.0);
   }
 
   /**
@@ -192,28 +230,13 @@ class AudioBreathEffect {
   _applyVisuals(energy) {
     const root = document.documentElement;
 
-    // === Layer 1: Window border glow (via CSS vars on :root) ===
-    // Inner glow: 12px → 30px spread, opacity 0.15 → 0.40
+    // === Window border glow (via CSS vars on :root) ===
+    // Inner glow: 12px → 30px spread, opacity 0.15 → 0.55
     root.style.setProperty('--glow-inner-blur', (12 + energy * 18).toFixed(0) + 'px');
-    root.style.setProperty('--glow-inner-alpha', (0.15 + energy * 0.25).toFixed(3));
+    root.style.setProperty('--glow-inner-alpha', (0.15 + energy * 0.40).toFixed(3));
     // Outer halo: 35px → 80px spread, opacity 0.06 → 0.15
     root.style.setProperty('--glow-outer-blur', (35 + energy * 45).toFixed(0) + 'px');
     root.style.setProperty('--glow-outer-alpha', (0.06 + energy * 0.09).toFixed(3));
-
-    // === Layer 2: Now-bar micro-breathing (via CSS vars on now-bar) ===
-    const el = this.targetEl;
-    if (el) {
-      el.style.setProperty('--breath-border',
-        `rgba(0, 229, 160, ${(0.12 + energy * 0.23).toFixed(3)})`);
-      el.style.setProperty('--breath-shadow',
-        `0 0 ${(energy * 20).toFixed(1)}px rgba(0, 229, 160, ${(energy * 0.08).toFixed(3)})`);
-      el.style.setProperty('--breath-scale', (1 + energy * 0.005).toFixed(5));
-    }
-
-    // === Ambient glow behind now-bar ===
-    if (this._glowEl) {
-      this._glowEl.style.opacity = (0.01 + energy * 0.04).toFixed(3);
-    }
   }
 
   /**

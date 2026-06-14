@@ -36,6 +36,16 @@ class AudioVisualizer {
     window.addEventListener('resize', () => this.resize());
     this._readThemeColors();
 
+    // 页面可见性变化 — 最小化/隐藏到托盘时暂停渲染
+    this._onVisibilityChange = () => {
+      if (document.hidden) {
+        this.stop();
+      } else {
+        this.resume();
+      }
+    };
+    document.addEventListener('visibilitychange', this._onVisibilityChange);
+
     // 启动
     this._run();
   }
@@ -96,11 +106,12 @@ class AudioVisualizer {
   // ===== 主循环 =====
 
   _run() {
+    this.isRunning = true;
     const loop = () => {
       this.animationId = requestAnimationFrame(loop);
       this._tick();
     };
-    loop();
+    this.animationId = requestAnimationFrame(loop);
   }
 
   _tick() {
@@ -320,15 +331,22 @@ class AudioVisualizer {
   // ===== 公共 API =====
 
   stop() {
-    // 极光持续运行，不中断
+    if (!this.isRunning) return;
+    this.isRunning = false;
+    if (this.animationId) {
+      cancelAnimationFrame(this.animationId);
+      this.animationId = null;
+    }
   }
 
   resume() {
-    // 极光持续运行，不中断
+    if (this.isRunning) return;
+    this._run();
   }
 
   destroy() {
-    if (this.animationId) cancelAnimationFrame(this.animationId);
+    this.stop();
+    document.removeEventListener('visibilitychange', this._onVisibilityChange);
   }
 }
 

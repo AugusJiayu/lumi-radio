@@ -6,6 +6,10 @@ const fs = require('fs');
  * SQLite 数据库封装（使用 sql.js 纯 JS 实现）
  */
 class LumiDB {
+  // 滚动清理上限
+  static MAX_CHAT_ROWS = 500;
+  static MAX_PLAY_ROWS = 100;
+
   constructor(dbPath) {
     this.dbPath = dbPath;
     this.db = null;
@@ -59,9 +63,15 @@ class LumiDB {
         role TEXT NOT NULL,
         content TEXT NOT NULL,
         metadata TEXT,
+        tts_hash TEXT,
         created_at TEXT DEFAULT (datetime('now', 'localtime'))
       )
     `);
+
+    // 迁移：为已有表补 tts_hash 列
+    try {
+      this.db.run(`ALTER TABLE chat_history ADD COLUMN tts_hash TEXT`);
+    } catch (_) { /* 列已存在则忽略 */ }
 
     this.db.run(`
       CREATE TABLE IF NOT EXISTS play_history (
@@ -106,12 +116,13 @@ class LumiDB {
 
   // ===== 聊天记录 =====
 
-  saveChat(role, content, metadata = null) {
+  saveChat(role, content, metadata = null, ttsHash = null) {
     const stmt = this.db.prepare(
-      'INSERT INTO chat_history (role, content, metadata) VALUES (?, ?, ?)'
+      'INSERT INTO chat_history (role, content, metadata, tts_hash) VALUES (?, ?, ?, ?)'
     );
-    stmt.run([role, content, metadata ? JSON.stringify(metadata) : null]);
+    stmt.run([role, content, metadata ? JSON.stringify(metadata) : null, ttsHash]);
     stmt.free();
+    this._trimTable('chat_history', LumiDB.MAX_CHAT_ROWS);
     this.save();
   }
 
@@ -143,6 +154,7 @@ class LumiDB {
     );
     stmt.run([songName, artist, songId]);
     stmt.free();
+    this._trimTable('play_history', LumiDB.MAX_PLAY_ROWS);
     this.save();
   }
 
@@ -236,6 +248,29 @@ class LumiDB {
     stmt.run([hash, filePath]);
     stmt.free();
     this.save();
+  }
+
+  // ===== 滚动清理 =====
+
+  /**
+   * 裁剪表到最大行数，删除最旧的记录
+   * @param {string} table 表名
+   * @param {number} maxRows 保留的最大行数
+   */
+  _trimTable(table, maxRows) {
+    const stmt = this.db.prepare(`SELECT COUNT(*) AS cnt FROM ${table}`);
+    stmt.step();
+    const count = stmt.getAsObject().cnt;
+    stmt.free();
+
+    if (count <= maxRows) return;
+
+    const excess = count - maxRows;
+    // 删除最旧的 excess 条（id 最小的）
+    this.db.run(
+      `DELETE FROM ${table} WHERE id IN (SELECT id FROM ${table} ORDER BY id ASC LIMIT ?)`,
+      [excess]
+    );
   }
 
   // ===== 清理 =====

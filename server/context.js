@@ -180,7 +180,7 @@ You MUST respond with EXACTLY one JSON object. No text before or after. No markd
 ## About Song Information
 - Naturally share real details about songs using your music knowledge: recording year, behind-the-scenes stories, interesting facts about the artist
 - If you're not sure about a detail, don't mention it rather than getting it wrong
-- Use the web_search tool to verify information you're unsure about
+- Use the web_search tool to verify information you're unsure about, but search at most 3 times total — then work with what you have
 - Never fabricate years, album names, or other specific details
 
 ## [CORE] Response Modes — action Field
@@ -203,7 +203,7 @@ You must choose the appropriate action based on user intent and current playback
 
 [Decision Key] Check if a song is currently playing:
 - If playing + user says "recommend similar ones" → queue (don't interrupt!)
-- If playing + user says "I want to hear XXX" → play (user explicitly requests)
+- If playing + user says "I want to hear XXX" → queue (user explicitly requests)
 - If playing + user is just chatting → chat
 - If not playing + user wants music → play
 
@@ -218,7 +218,6 @@ When the user says any of these, you MUST return exactly that song in play — n
 - Any request with a specific song name or artist name
 - The user's request in ANY language must be honored
 
-Wrong example: User says "play Bohemian Rhapsody" but you play "Imagine" — absolutely forbidden!
 Right example: User says "play Bohemian Rhapsody", play must be [{"name": "Bohemian Rhapsody", "artist": "Queen"}]
 
 Only when the user doesn't mention any specific song/artist (e.g. "play something", "surprise me") can you freely recommend.
@@ -237,28 +236,28 @@ REMINDER: Your entire response must be ONE valid JSON object. No text outside th
       ? `## User's Music Taste\n${this.cache['taste.md']}`
       : '';
 
-    // 模块2.5：用户收藏的歌曲
+    // 模块3：用户收藏的歌曲
     const favSongs = this.cache['favPlaylists']?.songs || [];
     const favModule = favSongs.length > 0
       ? `## User's Favorite Songs (ONLY use when user explicitly asks for favorites)\n${favSongs.map(s => `- ${s.name} — ${s.artist}`).join('\n')}`
       : '';
 
-    // 模块3：当前时间 + 作息
+    // 模块4：当前时间 + 作息
     const timeModule = `## Current Time
 It's ${timeInfo.dayOfWeek} ${timeInfo.timeStr}, ${timeInfo.period}.
 ${routineMatch}`;
 
-    // 模块4：天气/情绪
+    // 模块5：天气/情绪
     const weatherModule = weather
       ? `## Current Weather\n${weather}\n${moodMatch ? 'Related mood rules:\n' + moodMatch : ''}`
       : '';
 
-    // 模块5：最近播放（避免重复）
+    // 模块6：最近播放（避免重复）
     const recentModule = recentPlays.length > 0
       ? `## [FORBIDDEN] Recently Played — These songs must NEVER appear in play again:\n${recentPlays.map(p => `- ${p.song_name} - ${p.artist}`).join('\n')}`
       : '';
 
-    // 模块5.5：当前播放状态（让 LLM 知道当前场景）
+    // 模块7：当前播放状态（让 LLM 知道当前场景）
     let playbackModule = '';
     if (playbackState.isPlaying && playbackState.currentSong) {
       const song = playbackState.currentSong;
@@ -270,14 +269,14 @@ The user just sent a message. Decide based on intent whether to continue playing
 Nothing is currently playing.`;
     }
 
-    // 模块6：会话状态（首次/非首次）
+    // 模块8：会话状态（首次/非首次）
     let sessionModule = '';
     if (chatHistory.length <= 1) {
       sessionModule = `## Session State
 This is the first message of the session. Start with "This is Lumi." for a brief self-introduction.`;
     }
 
-    // 模块7：用户输入
+    // 模块9：用户输入
     const userModule = `## User Just Said\n"${userInput}"`;
 
     // 组装 messages
@@ -335,7 +334,7 @@ This is the first message of the session. Start with "This is Lumi." for a brief
 - If the instruction says "this is the first message of the session", start with "This is Lumi."
 
 ## Transition Rules
-- If the instruction mentions the previous song, naturally reference it as a transition
+- If the instruction mentions the last played song, naturally reference it as a transition
 
 ## Accuracy
 - Only use the real song information provided, never fabricate years, album names, etc.
@@ -353,7 +352,7 @@ IMPORTANT: Always respond in English. Only return the say field text content, do
       contextParts.push('This is the first message of the session. Start with "This is Lumi." for a brief self-introduction.');
     }
     if (sessionState.lastPlayedSong) {
-      contextParts.push(`The previous song was "${sessionState.lastPlayedSong}" by ${sessionState.lastPlayedArtist || 'Unknown'}. You can naturally reference it as a transition.`);
+      contextParts.push(`The last played song was "${sessionState.lastPlayedSong}" by ${sessionState.lastPlayedArtist || 'Unknown'}. You can naturally reference it as a transition.`);
     }
 
     const userContent = `${metaInfo ? `## Real Song Information\n${metaInfo}` : ''}
@@ -361,7 +360,7 @@ IMPORTANT: Always respond in English. Only return the say field text content, do
 ${contextParts.length > 0 ? `## Context\n${contextParts.join('\n')}` : ''}
 
 ## Task
-Write a professional radio DJ intro for the following songs. Naturally introduce these songs using your music knowledge. You can use web_search to look up information you're unsure about.
+Write a professional radio DJ intro for the following song. Naturally introduce the next song using your music knowledge. You can use web_search to look up information you're unsure about, but search at most 3 times — then write the intro with whatever you have.
 
 Song list:
 ${djOutput.play.map(s => `- ${s.name} - ${s.artist}`).join('\n')}
@@ -369,6 +368,67 @@ ${djOutput.play.map(s => `- ${s.name} - ${s.artist}`).join('\n')}
 ${djOutput.say ? `Reference draft from first phase (feel free to improve significantly):\n${djOutput.say}` : ''}
 
 IMPORTANT: Always respond in English. Only return the say field text content, do not return JSON format or other fields.`;
+
+    return [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userContent }
+    ];
+  }
+
+  /**
+   * 组装单曲过渡 Prompt（用于歌曲之间的衔接台词）
+   * @param {Object} fromSong - 上一首歌 { name, artist }
+   * @param {Object} toSong - 下一首歌 { name, artist }
+   * @param {'segue'|'direct'} mode - segue 引用上一首，direct 直接介绍下一首
+   * @param {Object} toSongMeta - 下一首歌的真实元数据 { name, artist, album, year }
+   * @param {Object} sessionState - 会话状态
+   * @returns {Array} OpenAI 格式的 messages 数组
+   */
+  assembleTransitionPrompt(fromSong, mode, toSongMeta) {
+    const metaParts = [`"${toSongMeta.name}" by ${toSongMeta.artist}`];
+    if (toSongMeta.album) metaParts.push(`Album: ${toSongMeta.album}`);
+    if (toSongMeta.year) metaParts.push(`Year: ${toSongMeta.year}`);
+    const metaInfo = metaParts.join(' | ');
+
+    const segueInstruction = mode === 'segue'
+      ? `## Transition Style: SEQUE
+- Naturally reference the previous song ("${fromSong.name}" by ${fromSong.artist}) as a bridge to the next one
+- Connect the mood, theme, or energy between the two songs`
+      : `## Transition Style: DIRECT INTRODUCTION
+- Do NOT reference the previous song at all. Start fresh.
+- Introduce the next song directly with a natural opener`;
+
+    const systemPrompt = `You are Lumi, a tasteful personal radio DJ.
+
+## Speaking Style
+- Chat naturally in first person, like a real radio host
+- Warm, casual tone, like a late-night radio with soul
+- Naturally share real details about songs using your music knowledge
+- Never use template phrases or say "I recommend this song"
+- ALWAYS speak in English, even if the user writes in Chinese
+- Song names and artist names should keep their original language
+
+${segueInstruction}
+
+## Accuracy
+- Only use the real song information provided, never fabricate years, album names, etc.
+- If there's not enough information, just share your musical feelings
+
+## DJ Transition Duration Control
+- This is a short transition between two songs (Talk Over Intro style)
+- Keep it within 15-20 seconds — brief and natural
+- Music is already playing in the background, you say a few words, then let the music speak
+- Do NOT try to say too much. Short and sweet.
+
+IMPORTANT: Always respond in English. Only return the say field text content, do not return JSON format.`;
+
+    const userContent = `## Real Song Information (Next Song)
+${metaInfo}
+
+${fromSong ? `## Previous Song\n"${fromSong.name}" by ${fromSong.artist}` : ''}
+
+## Task
+Write a brief radio DJ transition for the upcoming song.`;
 
     return [
       { role: 'system', content: systemPrompt },

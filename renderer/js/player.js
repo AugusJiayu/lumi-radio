@@ -21,6 +21,9 @@ class Player {
     // 播放列表播完后自动请求更多音乐的定时器
     this._moreMusicTimer = null;
 
+    // 逐首过渡台词队列（queue_transitions 填充，每首歌播放前消费一条）
+    this._pendingTransitions = [];
+
     this.init();
   }
 
@@ -48,6 +51,7 @@ class Player {
 
     this._breathEffect = new AudioBreathEffect({
       audioEl: this.audio,
+      secondaryAudioEl: this.ttsAudio,
       targetEl: nowBar,
       attackMs: 150,
       releaseMs: 500,
@@ -56,6 +60,14 @@ class Player {
     this._breathEffect.init();
     this._breathEffect.connect();
     this._breathReady = true;
+
+    // 共享 AudioContext 和 MediaElementSource 给极光可视化
+    // （每个 audio 元素只能调用一次 createMediaElementSource）
+    if (this._breathEffect._ctx && this._breathEffect._source) {
+      visualizer.audioContext = this._breathEffect._ctx;
+      visualizer.analyser = this._breathEffect._analyser;
+      visualizer.connected = true;
+    }
   }
 
   _startBreath() {
@@ -235,6 +247,7 @@ class Player {
 
     // hover 控制弹窗显隐 — 悬浮在音量按钮上显示，移到弹窗上可拖动
     let hideTimer = null;
+    let isDragging = false;
 
     const showPopup = () => {
       clearTimeout(hideTimer);
@@ -243,6 +256,7 @@ class Player {
     };
 
     const hidePopup = () => {
+      if (isDragging) return; // 拖动中不隐藏
       clearTimeout(hideTimer);
       hideTimer = setTimeout(() => {
         sliderPopup.style.opacity = '0';
@@ -252,7 +266,7 @@ class Player {
 
     // 鼠标进入按钮或弹窗时显示
     volWrap.addEventListener('mouseenter', showPopup);
-    // 鼠标离开整个容器时隐藏
+    // 鼠标离开整个容器时隐藏（拖动期间不隐藏）
     volWrap.addEventListener('mouseleave', hidePopup);
 
     // 点击音量按钮 → 静音切换
@@ -263,7 +277,6 @@ class Player {
 
     // 音量滑块拖动 — 支持从轨道或圆点拖拽
     const sliderDot = document.getElementById('vol-slider-dot');
-    let isDragging = false;
 
     const updateVolume = (e) => {
       const rect = sliderTrack.getBoundingClientRect();
@@ -275,6 +288,7 @@ class Player {
     // 轨道点击 + 拖拽
     sliderTrack.addEventListener('mousedown', (e) => {
       isDragging = true;
+      showPopup();
       updateVolume(e);
       e.preventDefault();
     });
@@ -283,6 +297,8 @@ class Player {
     if (sliderDot) {
       sliderDot.addEventListener('mousedown', (e) => {
         isDragging = true;
+        showPopup();
+        updateVolume(e);
         e.preventDefault();
         e.stopPropagation();
       });
@@ -294,6 +310,8 @@ class Player {
 
     document.addEventListener('mouseup', () => {
       isDragging = false;
+      // 鼠标不在容器内时隐藏弹窗
+      if (!volWrap.matches(':hover')) hidePopup();
     });
   }
 
@@ -622,8 +640,26 @@ class Player {
       if (this.playlist.length > 0 && !this.audio.src) this.playCurrentTrack();
     });
 
-    // 歌曲播完事件：优先处理延迟 intro 过渡
+    // 歌曲播完事件：优先处理逐首过渡台词
     this.audio.addEventListener('ended', () => {
+      // 优先：消费逐首过渡队列（每首歌播放前播放一条过渡台词）
+      if (this._pendingTransitions.length > 0) {
+        const transition = this._pendingTransitions.shift();
+        if (transition.ttsAudio) {
+          if (transition.sayText) this._startTypewriter(transition.sayText, this._getAudioDurationMs(transition.ttsAudio));
+          this._playTTSOverlay(transition.ttsAudio, () => {
+            this._stopTypewriter();
+            this.nextTrack();
+          });
+        } else if (transition.sayText) {
+          this._revealFullText(transition.sayText);
+          this.nextTrack();
+        } else {
+          this.nextTrack();
+        }
+        return;
+      }
+      // 兼容旧的 queue_intro 单条过渡
       if (this._pendingIntro) {
         const intro = this._pendingIntro;
         this._pendingIntro = null;
@@ -725,6 +761,7 @@ class Player {
 
       case 'play':
         // 播放新歌：设置播放列表 + 可选 TTS intro
+        this._pendingTransitions = []; // 清空旧的过渡队列
         if (data.songs?.length > 0) {
           this.playlist = data.songs;
           this.currentIndex = 0;
@@ -761,6 +798,35 @@ class Player {
           }
         }
         if (sayText) this._startTypewriter(sayText, null);
+        break;
+
+      case 'play_transitions':
+        // play 多首歌时：第 1 首已有 intro，剩余歌曲的逐首过渡
+        if (data.transitions?.length > 0) {
+          this._pendingTransitions.push(...data.transitions);
+          console.log(`[Player] 收到 ${data.transitions.length} 条 play 过渡台词`);
+        }
+        break;
+
+      case 'queue_transitions':
+        // 逐首过渡台词：存入过渡队列，每首歌播放前消费一条
+        if (data.songs?.length > 0) {
+          for (const song of data.songs) {
+            if (!this.playlist.some(s => s.name === song.name && s.artist === song.artist)) {
+              this.playlist.push(song);
+            }
+          }
+          this.renderQueue();
+          console.log(`[Player] 已加入 ${data.songs.length} 首到队列`);
+          if (this.playlist.length === data.songs.length && !this.audio.src) {
+            this.currentIndex = 0;
+            this.playCurrentTrack();
+          }
+        }
+        if (data.transitions?.length > 0) {
+          this._pendingTransitions.push(...data.transitions);
+          console.log(`[Player] 收到 ${data.transitions.length} 条逐首过渡台词`);
+        }
         break;
 
       case 'queue_intro':
@@ -858,21 +924,18 @@ class Player {
   _startSpeaking() {
     document.body.classList.add('lumi-speaking');
 
-    const inputRow = document.querySelector('.input-row');
-    const nowBar = document.getElementById('now-bar');
+    // 切换呼吸效果到 TTS 音源（窗口边框 + 输入框共用）
+    this._breathEffect?.switchToSecondary();
 
-    // 添加 speak-glow 基础类（如果还没有）
+    const inputRow = document.querySelector('.input-row');
+
+    // 仅对话输入框添加流体渐变光晕（now-bar 不加）
     if (inputRow && !inputRow.classList.contains('speak-glow')) {
       inputRow.classList.add('speak-glow');
     }
-    if (nowBar && !nowBar.classList.contains('speak-glow')) {
-      nowBar.classList.add('speak-glow');
-    }
 
-    // 下一帧激活（确保 CSS transition 生效）
     requestAnimationFrame(() => {
       inputRow?.classList.add('speaking', 'active');
-      nowBar?.classList.add('speaking', 'active');
     });
   }
 
@@ -882,17 +945,16 @@ class Player {
   _stopSpeaking() {
     document.body.classList.remove('lumi-speaking');
 
-    const inputRow = document.querySelector('.input-row');
-    const nowBar = document.getElementById('now-bar');
+    // 恢复呼吸效果到音乐音源
+    this._breathEffect?.restorePrimary();
 
-    // 先移除 active（触发 opacity 淡出），等动画结束后再移除 speak-glow
+    const inputRow = document.querySelector('.input-row');
+
     inputRow?.classList.remove('active', 'speaking');
-    nowBar?.classList.remove('active', 'speaking');
 
     setTimeout(() => {
       inputRow?.classList.remove('speak-glow');
-      nowBar?.classList.remove('speak-glow');
-    }, 400); // 匹配 CSS transition 0.4s
+    }, 400);
   }
 
   /**
@@ -929,9 +991,6 @@ class Player {
     this.audio.play().catch(() => {});
     this.updateNowPlaying();
     this.renderQueue();
-
-    // 连接可视化
-    try { visualizer.connectAudio(this.audio); } catch {}
   }
 
   updateNowPlaying() {
@@ -1072,6 +1131,7 @@ class Player {
     // 清空播放列表，等 DJ 响应后重新填充
     this.playlist = [];
     this.currentIndex = 0;
+    this._pendingTransitions = [];
     this.audio.removeAttribute('src');
     this.renderQueue();
     this.updateNowPlaying();
@@ -1295,10 +1355,13 @@ class Player {
     const now = new Date();
     const time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
 
+    // 使用个人页头像（同步）
+    const avatarHTML = window.app?.getUserAvatarHTML?.() || '<div class="chat-user-avatar">♪</div>';
+
     const msg = document.createElement('div');
     msg.className = 'dj-msg user';
     msg.innerHTML = `
-      <div class="dj-msg-avatar">♪</div>
+      <div class="dj-msg-avatar">${avatarHTML}</div>
       <div class="dj-msg-body">
         <div class="dj-msg-text">${text}</div>
         <div class="dj-msg-meta">${time}</div>

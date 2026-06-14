@@ -4,7 +4,7 @@
  * 设计哲学：音乐决定空间，而不是空间决定颜色。
  *
  * 两套取色策略：
- *   A. 首页（Home/Chat/Genre/Mode）→ 从背景光斑取环境色
+ *   A. 首页（Home/Chat/Mode）→ 从背景光斑取环境色
  *   B. 播放页（Now Playing）→ 从专辑封面提取主色
  *
  * 所有 Glass Panel 共享同一个 Material Theme，
