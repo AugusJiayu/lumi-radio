@@ -523,10 +523,12 @@ input {
   z-index: 2;
 }
 
-/* Now Playing 页面：禁用整页滚动，固定全屏 Modal */
+/* Now Playing 页面：全屏覆盖，不留导航栏空间 */
 #page-nowplaying {
   overflow: hidden !important;
   overscroll-behavior: none;
+  padding: 16px;
+  height: 100%;
 }
 
 /* 主页：缩短与导航栏的距离 */

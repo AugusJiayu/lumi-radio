@@ -22,7 +22,7 @@ class LyricsManager {
     if (!lrcText) return [];
     const lines = [];
     const metaRegex = /^\[(ar|ti|al|by|offset|re|ve):(.*)\]$/;
-    const timeRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)/g;
+    const timeRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/g;
     const credits = [];
     const metadata = {};
 
@@ -39,17 +39,27 @@ class LyricsManager {
 
       // 2. 带时间戳的歌词行
       let hasTimestamp = false;
+      const timestamps = [];
       let match;
       while ((match = timeRegex.exec(trimmed)) !== null) {
         hasTimestamp = true;
         const min = parseInt(match[1], 10);
         const sec = parseInt(match[2], 10);
         const ms = parseInt(match[3].padEnd(3, '0'), 10);
-        const time = min * 60 + sec + ms / 1000;
-        const text = match[4].trim();
-        if (text) lines.push({ time, text });
+        timestamps.push(min * 60 + sec + ms / 1000);
       }
       timeRegex.lastIndex = 0;
+
+      if (hasTimestamp) {
+        // 提取最后一个时间戳之后的文本
+        const lastTsEnd = trimmed.lastIndexOf(']');
+        const text = lastTsEnd >= 0 ? trimmed.substring(lastTsEnd + 1).trim() : '';
+        if (text) {
+          for (const time of timestamps) {
+            lines.push({ time, text });
+          }
+        }
+      }
 
       // 3. 无时间戳的纯文本行 → 致谢信息
       if (!hasTimestamp && trimmed.length > 0) {

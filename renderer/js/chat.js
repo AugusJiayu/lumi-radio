@@ -13,13 +13,18 @@ class Chat {
   }
 
   setupAppEvents() {
+    app.on('user_message', (text) => this.addEntry('user', text));
     app.on('dj_response', (data) => {
       this.removeStreaming();
       if (data.say) this.addEntry('dj', data.say, data.ttsHash || null);
     });
+    // 过渡台词：仅在主页实际消费并显示时才同步到聊天页
+    app.on('transition_show', (text) => this.addEntry('dj', text));
 
     app.on('dj_thinking', () => this.addStreaming());
-    app.on('dj_streaming', (chunk) => this.appendToStreaming(chunk));
+    // stage 1 流式输出是 JSON 决策，不显示在聊天页（等待 stage 2 的 dj_response）
+    app.on('dj_streaming', () => {});
+    app.on('dj_stream_end', () => {});
     app.on('error', (msg) => {
       this.removeStreaming();
       this.addEntry('dj', msg);
@@ -189,7 +194,7 @@ class Chat {
       }
 
       this.messages.innerHTML = '';
-      // 反转顺序：DESC 取出的是最新在前，反转后按时间正序渲染（用户消息在上，DJ回复在下）
+      // API 返回 DESC（最新在前），反转后渲染——最早在顶部，最新在底部
       history.reverse();
       for (const msg of history) {
         // 从 metadata 中提取 tts_hash（如果有）
@@ -202,6 +207,10 @@ class Chat {
         }
         this.addEntry(msg.role, msg.content, ttsHash);
       }
+      // 滚动到底部，最新消息在底部（等 DOM 渲染完再滚）
+      requestAnimationFrame(() => {
+        this.messages.scrollTop = this.messages.scrollHeight;
+      });
     } catch {
       // 静默失败
     }

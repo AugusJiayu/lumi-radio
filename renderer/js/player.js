@@ -318,7 +318,12 @@ class Player {
   setVolume(val) {
     this.volume = val;
     this.isMuted = val === 0;
-    this.audio.volume = val;
+    // 同步更新 GainNode（Web Audio API 接管后 .volume 无效）
+    if (this._breathEffect?._gainPrimary && !this._introMode) {
+      this._breathEffect._gainPrimary.gain.value = val;
+    } else {
+      this.audio.volume = val;
+    }
     this.ttsAudio.volume = val;
 
     const fill = document.getElementById('vol-slider-fill');
@@ -380,8 +385,7 @@ class Player {
       return;
     }
 
-    // 有歌曲时展开面板
-    if (panel) panel.classList.add('open');
+    // 不自动展开面板 — 用户自己点击查看
 
     const playSvg = '<svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>';
 
@@ -420,6 +424,7 @@ class Player {
     if (text) {
       this.addUserMessage(text);
       app.sendMessage(text);
+      app.emit('user_message', text);
       input.value = '';
       // Reset textarea height
       if (input.tagName === 'TEXTAREA') {
@@ -645,6 +650,8 @@ class Player {
       // 优先：消费逐首过渡队列（每首歌播放前播放一条过渡台词）
       if (this._pendingTransitions.length > 0) {
         const transition = this._pendingTransitions.shift();
+        // 同步到聊天页：仅在主页实际显示过渡台词时才通知
+        if (transition.sayText) app.emit('transition_show', transition.sayText);
         if (transition.ttsAudio) {
           if (transition.sayText) this._startTypewriter(transition.sayText, this._getAudioDurationMs(transition.ttsAudio));
           this._playTTSOverlay(transition.ttsAudio, () => {
@@ -879,7 +886,14 @@ class Player {
    */
   _playTTSOverlay(ttsBase64, onEnd) {
     this._introMode = true;
-    this.audio.volume = 0.15;
+    // 确保 Breath 效果已初始化（可能在 audio play 事件之前调用）
+    this._initBreath();
+    // Web Audio API 接管后 .volume 无效，通过 GainNode 控制
+    if (this._breathEffect?._gainPrimary) {
+      this._breathEffect._gainPrimary.gain.value = 0.15;
+    } else {
+      this.audio.volume = 0.15;
+    }
     try {
       const binaryStr = atob(ttsBase64);
       const bytes = new Uint8Array(binaryStr.length);
@@ -894,7 +908,7 @@ class Player {
       }).catch(err => {
         console.warn('[Player] TTS 播放失败:', err.message);
         this._introMode = false;
-        this.audio.volume = this.volume;
+        this._restoreMusicVolume();
         this._stopSpeaking();
         if (onEnd) onEnd();
       });
@@ -904,7 +918,7 @@ class Player {
         this._stopSpeaking();
         if (this._introMode) {
           this._introMode = false;
-          this._fadeVolume(0.15, this.volume, 800);
+          this._restoreMusicVolume();
         }
         this.ttsAudio.onended = null;
         if (onEnd) onEnd();
@@ -912,7 +926,7 @@ class Player {
     } catch (err) {
       console.warn('[Player] TTS base64 解码失败:', err.message);
       this._introMode = false;
-      this.audio.volume = this.volume;
+      this._restoreMusicVolume();
       this._stopSpeaking();
       if (onEnd) onEnd();
     }
@@ -958,24 +972,42 @@ class Player {
   }
 
   /**
+   * 恢复音乐音量（通过 GainNode 或 .volume）
+   */
+  _restoreMusicVolume() {
+    if (this._breathEffect?._gainPrimary) {
+      this._breathEffect._gainPrimary.gain.value = 1;
+    } else {
+      this.audio.volume = this.volume;
+    }
+  }
+
+  /**
    * 平滑过渡音量（用于 DJ intro 结束后音乐渐强）
    */
   _fadeVolume(from, to, duration) {
-    const steps = 20;
-    const stepTime = duration / steps;
-    const delta = (to - from) / steps;
-    let current = from;
-    let step = 0;
-
-    const timer = setInterval(() => {
-      step++;
-      current += delta;
-      this.audio.volume = Math.max(0, Math.min(1, current));
-      if (step >= steps) {
-        clearInterval(timer);
-        this.audio.volume = to;
-      }
-    }, stepTime);
+    const gain = this._breathEffect?._gainPrimary;
+    if (gain) {
+      // 通过 GainNode 渐变
+      gain.gain.setValueAtTime(from, this._breathEffect._ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(to, this._breathEffect._ctx.currentTime + duration / 1000);
+    } else {
+      // 降级到 .volume
+      const steps = 20;
+      const stepTime = duration / steps;
+      const delta = (to - from) / steps;
+      let current = from;
+      let step = 0;
+      const timer = setInterval(() => {
+        step++;
+        current += delta;
+        this.audio.volume = Math.max(0, Math.min(1, current));
+        if (step >= steps) {
+          clearInterval(timer);
+          this.audio.volume = to;
+        }
+      }, stepTime);
+    }
   }
 
   // ===== 播放控制 =====
@@ -991,6 +1023,8 @@ class Player {
     this.audio.play().catch(() => {});
     this.updateNowPlaying();
     this.renderQueue();
+
+    // 歌词由服务端 play case 通过 WebSocket 发送，无需 REST 请求
   }
 
   updateNowPlaying() {
@@ -1066,8 +1100,7 @@ class Player {
       }
     }
 
-    // 清空旧歌词（新歌词会通过 lyrics 事件覆盖）
-    if (window.lyricsManager) window.lyricsManager.clear();
+    // 歌词由服务端通过 WebSocket 发送，无需在此清空
 
     // 刷新心型按钮状态
     this.refreshHeartState();
@@ -1150,6 +1183,35 @@ class Player {
     if (this._moreMusicTimer) {
       clearTimeout(this._moreMusicTimer);
       this._moreMusicTimer = null;
+    }
+  }
+
+  /**
+   * 请求当前歌曲歌词（切歌时调用）
+   */
+  async _fetchLyrics(track) {
+    if (!track?.id) {
+      if (window.lyricsManager) window.lyricsManager.clear();
+      return;
+    }
+    try {
+      const res = await fetch(`${APP_API_BASE}/api/lyrics/${track.id}`);
+      const data = await res.json();
+      if (window.lyricsManager) {
+        const lrc = data.lrc || '';
+        const tlyric = data.tlyric || '';
+        console.log(`[Lyrics] API 返回 lrc 长度: ${lrc.length}, tlyric 长度: ${tlyric.length}, lrc 行数: ${lrc.split('\n').length}`);
+        // 合并原文歌词 + 翻译歌词
+        const merged = lrc && tlyric ? `${lrc}\n${tlyric}` : (lrc || tlyric);
+        if (merged) {
+          window.lyricsManager.render(merged);
+        } else {
+          window.lyricsManager.clear();
+        }
+      }
+    } catch (e) {
+      console.warn('[Player] 歌词请求失败:', e.message);
+      if (window.lyricsManager) window.lyricsManager.clear();
     }
   }
 
@@ -1277,7 +1339,7 @@ class Player {
     const startReveal = (ms) => {
       const visibleChars = text.replace(/[\s.,!?;:'"()\-—–…]/g, '').length;
       const targetMs = ms * 0.85;
-      let msPerChar = Math.max(15, Math.min(200, targetMs / Math.max(1, visibleChars)));
+      let msPerChar = Math.max(10, Math.min(150, targetMs / Math.max(1, visibleChars)));
 
       this._typewriterTimer = setInterval(() => {
         if (this._typewriterRevealed >= text.length) {
@@ -1300,6 +1362,18 @@ class Player {
     } else {
       startReveal(durationMs);
     }
+
+    // 安全网：TTS 播完时强制显示全部文字（防止打字速度跟不上）
+    this._typewriterSafetyTimer = setTimeout(() => {
+      if (this._typewriterRevealed < text.length) {
+        const el = container.querySelector('.dj-msg:last-child .dj-msg-text');
+        if (el) {
+          el.textContent = text;
+          this._typewriterRevealed = text.length;
+        }
+      }
+      this._stopTypewriter();
+    }, (durationMs || 10000) + 500);
   }
 
   /**
@@ -1323,6 +1397,10 @@ class Player {
     if (this._typewriterTimer) {
       clearInterval(this._typewriterTimer);
       this._typewriterTimer = null;
+    }
+    if (this._typewriterSafetyTimer) {
+      clearTimeout(this._typewriterSafetyTimer);
+      this._typewriterSafetyTimer = null;
     }
     this._djStreaming = false;
   }
@@ -1355,8 +1433,10 @@ class Player {
     const now = new Date();
     const time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
 
-    // 使用个人页头像（同步）
-    const avatarHTML = window.app?.getUserAvatarHTML?.() || '<div class="chat-user-avatar">♪</div>';
+    // 使用个人页头像（同步）—— app.js 在 player.js 之前加载，const app 已存在
+    const avatarHTML = (typeof app !== 'undefined' && app.getUserAvatarHTML)
+      ? app.getUserAvatarHTML()
+      : '<div class="chat-user-avatar">♪</div>';
 
     const msg = document.createElement('div');
     msg.className = 'dj-msg user';

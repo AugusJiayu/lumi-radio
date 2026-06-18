@@ -139,22 +139,22 @@ class AudioBreathEffect {
 
   /**
    * Switch breath analysis to the secondary audio source (TTS).
-   * Mutes primary, unmutes secondary.
+   * Ducks primary (music at 15%), unmutes secondary (TTS).
    */
   switchToSecondary() {
     if (!this._gainSecondary) return;
-    this._gainPrimary.gain.value = 0;
+    this._gainPrimary.gain.value = 0.15;  // duck music to 15%, don't mute
     this._gainSecondary.gain.value = 1;
   }
 
   /**
    * Restore breath analysis to the primary audio source (music).
-   * Mutes secondary, unmutes primary.
+   * Mutes secondary, restores primary to full volume.
    */
   restorePrimary() {
     if (!this._gainPrimary) return;
     this._gainSecondary.gain.value = 0;
-    this._gainPrimary.gain.value = 1;
+    this._gainPrimary.gain.value = 0.85;
   }
 
   /**

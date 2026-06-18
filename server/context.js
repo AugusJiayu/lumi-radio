@@ -355,15 +355,26 @@ IMPORTANT: Always respond in English. Only return the say field text content, do
       contextParts.push(`The last played song was "${sessionState.lastPlayedSong}" by ${sessionState.lastPlayedArtist || 'Unknown'}. You can naturally reference it as a transition.`);
     }
 
-    const userContent = `${metaInfo ? `## Real Song Information\n${metaInfo}` : ''}
+    // 只介绍第一首歌，后续歌曲由 _generateTransitions 逐首生成
+    const firstSong = songMetaList[0];
+    const firstMetaParts = [`"${firstSong.name}" by ${firstSong.artist}`];
+    if (firstSong.album) firstMetaParts.push(`Album: ${firstSong.album}`);
+    if (firstSong.year) firstMetaParts.push(`Year: ${firstSong.year}`);
+    const firstMetaInfo = firstMetaParts.join(' | ');
+
+    const totalCount = djOutput.play.length;
+    const multiSongHint = totalCount > 1
+      ? `\n\nIMPORTANT: You are introducing ONLY the first song of a ${totalCount}-song set. Do NOT mention or introduce the other songs. Transitions for later songs will be generated separately.`
+      : '';
+
+    const userContent = `## Real Song Information (This Song Only)
+${firstMetaInfo}
 
 ${contextParts.length > 0 ? `## Context\n${contextParts.join('\n')}` : ''}
 
 ## Task
-Write a professional radio DJ intro for the following song. Naturally introduce the next song using your music knowledge. You can use web_search to look up information you're unsure about, but search at most 3 times — then write the intro with whatever you have.
-
-Song list:
-${djOutput.play.map(s => `- ${s.name} - ${s.artist}`).join('\n')}
+Write a professional radio DJ intro for this ONE song. Naturally introduce it using your music knowledge. You can use web_search to look up information you're unsure about, but search at most 3 times — then write the intro with whatever you have.
+${multiSongHint}
 
 ${djOutput.say ? `Reference draft from first phase (feel free to improve significantly):\n${djOutput.say}` : ''}
 
@@ -392,16 +403,16 @@ IMPORTANT: Always respond in English. Only return the say field text content, do
 
     const segueInstruction = mode === 'segue'
       ? `## Transition Style: SEQUE
-- Naturally reference the previous song ("${fromSong.name}" by ${fromSong.artist}) as a bridge to the next one
+- Naturally bridge from the previous song ("${fromSong.name}" by ${fromSong.artist}) to the next one
 - Connect the mood, theme, or energy between the two songs`
       : `## Transition Style: DIRECT INTRODUCTION
-- Do NOT reference the previous song at all. Start fresh.
+- Do NOT reference the previous song at all. Can start "the next song...".
 - Introduce the next song directly with a natural opener`;
 
     const systemPrompt = `You are Lumi, a tasteful personal radio DJ.
 
 ## Speaking Style
-- Chat naturally in first person, like a real radio host
+- Speak naturally in first person, like a real radio host
 - Warm, casual tone, like a late-night radio with soul
 - Naturally share real details about songs using your music knowledge
 - Never use template phrases or say "I recommend this song"

@@ -90,6 +90,7 @@ class LumiApp {
         this.emit('playback_update', msg);
         break;
       case 'playback_update': this.emit('playback_update', msg); break;
+      case 'play_transitions': this.emit('play_transitions', msg); break;
       case 'command': this.emit('command', msg.action); break;
       case 'error': this.emit('error', msg.message); break;
       case 'stt_started': this.emit('stt_started'); break;

@@ -332,6 +332,7 @@ class Router {
 
       // 7. 根据 action 分支处理
       let playList = [];
+      let songMetaList = [];
       let finalSay = djOutput.say || '';
       let ttsHash = null;
 
@@ -340,11 +341,12 @@ class Router {
           // 播放新歌：搜索 + 可选 TTS + 播放
           if (djOutput.play?.length > 0) {
             this.broadcastState('choosing');
-            const [resolved, songMetaList] = await Promise.all([
+            const [resolved, meta] = await Promise.all([
               this.music.resolvePlayList(djOutput.play),
               this.fetchSongMetadata(djOutput.play)
             ]);
             playList = resolved;
+            songMetaList = meta;
 
             // 用真实元数据重写 intro（带超时保护）
             this.broadcastState('writing');
@@ -367,7 +369,7 @@ class Router {
                     }
                     return '未知工具';
                   },
-                  { maxTokens: 1024 }
+                  { maxTokens: 2048 }
                 ),
                 new Promise((_, reject) =>
                   setTimeout(() => reject(new Error('阶段二超时(60s)')), 60000)
@@ -382,6 +384,7 @@ class Router {
           // 合成 TTS
           let ttsResult = null;
           if (finalSay) {
+            finalSay = this._cleanLLMOutput(finalSay);
             this.broadcastState('speaking');
             try { ttsResult = await this.tts.synthesize(finalSay); }
             catch (ttsErr) { console.error('[Router] TTS 合成失败:', ttsErr.message); }
@@ -458,6 +461,8 @@ class Router {
               ttsAudio: null
             });
 
+            this.broadcastState('idle');
+
             // 后台异步生成逐首过渡（不阻塞消息队列）
             this._generateTransitions(playList, songMetaList)
               .then(transitions => {
@@ -479,6 +484,7 @@ class Router {
               action: 'chat',
               songs: []
             });
+            this.broadcastState('idle');
           }
           break;
         }
@@ -627,6 +633,20 @@ class Router {
   }
 
   /**
+   * 清理 LLM 输出的垃圾文本（meta 说明、markdown 标记等）
+   */
+  _cleanLLMOutput(text) {
+    if (!text) return text;
+    // 去掉常见的 LLM meta 前缀
+    text = text.replace(/^(?:---\s*)?(?:Here(?:'s| is)|This is|Now |Alright,?\s*)[^\n]*\n(?:---\s*\n)?/i, '');
+    // 去掉 markdown 分隔线
+    text = text.replace(/^---+$/gm, '');
+    // 去掉 "Transition Style:" 等标记
+    text = text.replace(/^(?:Transition Style|DJ Transition|SEQUE|DIRECT)[^\n]*\n/gim, '');
+    return text.trim();
+  }
+
+  /**
    * 为歌曲列表生成逐首过渡台词
    * @param {Array} songs - 解析后的歌曲列表 [{name, artist, ...}]
    * @param {Array} songMetaList - 真实元数据列表
@@ -666,7 +686,7 @@ class Router {
               }
               return '未知工具';
             },
-            { maxTokens: 512 }
+            { maxTokens: 1024 }
           ),
           new Promise((_, reject) =>
             setTimeout(() => reject(new Error(`transition[${i}] 超时(30s)`)), 30000)
@@ -677,6 +697,7 @@ class Router {
       }
 
       if (sayText) {
+        sayText = this._cleanLLMOutput(sayText);
         try {
           const ttsResult = await this.tts.synthesize(sayText);
           ttsAudio = ttsResult?.base64 || null;

@@ -220,6 +220,18 @@ async function startServer() {
     res.json(scheduler.getJobs());
   });
 
+  // 获取歌词（供切歌时前端请求）
+  app.get('/api/lyrics/:id', async (req, res) => {
+    try {
+      const lyricData = await musicService.getLyric(req.params.id);
+      const lrc = lyricData.lrc || '';
+      const tlyric = lyricData.tlyric || '';
+      res.json({ lrc, tlyric });
+    } catch (err) {
+      res.json({ lrc: '', tlyric: '' });
+    }
+  });
+
   // ===== 喜欢的歌曲（FavPlaylists.json） =====
 
   const FAV_PATH = path.join(USER_DIR, 'FavPlaylists.json');
